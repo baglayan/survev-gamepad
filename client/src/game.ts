@@ -9,6 +9,7 @@ import type { Ambiance } from "./ambiance.ts";
 import type { AudioManager } from "./audioManager.ts";
 import { Camera } from "./camera.ts";
 import type { ConfigManager, DebugRenderOpts } from "./config.ts";
+import { crosshair } from "./crosshair.ts";
 import { DebugHUD } from "./debug/debugHUD.ts";
 import { debugLines } from "./debug/debugLines.ts";
 
@@ -21,6 +22,9 @@ import { SpectateAction } from "../../shared/net/spectateMsg.ts";
 import { device } from "./device.ts";
 import { EmoteBarn } from "./emote.ts";
 import { errorLogManager } from "./errorLogs.ts";
+import { controllerManager } from "./gamepad/controllerManager.ts";
+import { GamepadButton } from "./gamepad/gamepadButtons.ts";
+import { menuNavigator } from "./gamepad/menuNavigator.ts";
 import { Gas } from "./gas.ts";
 import { helpers } from "./helpers.ts";
 import { type InputHandler, Key } from "./input.ts";
@@ -113,6 +117,13 @@ export class Game {
 
     editor!: Editor;
     debugHUD!: DebugHUD;
+
+    controllerAimOffset = v2.create(4, 0);
+    controllerAimActive = false;
+    cursorHidden = false;
+    lastMousePos = v2.create(0, 0);
+    prevHealth = 100;
+    prevHealthId = 0;
 
     seq!: number;
     seqInFlight!: boolean;
@@ -326,6 +337,12 @@ export class Game {
         this.m_debugZoom = 1;
         this.m_useDebugZoom = false;
 
+        this.controllerAimOffset = v2.create(4, 0);
+        this.controllerAimActive = false;
+        this.lastMousePos = v2.create(0, 0);
+        this.prevHealth = GameConfig.player.health;
+        this.prevHealthId = 0;
+
         // Latency determination
 
         this.seq = 0;
@@ -352,6 +369,10 @@ export class Game {
         }
         this.connecting = false;
         this.connected = false;
+        if (this.cursorHidden) {
+            this.cursorHidden = false;
+            crosshair.setGameCrosshair(this.m_config.get("loadout")!.crosshair);
+        }
         if (this.initialized) {
             this.initialized = false;
             this.m_updatePass = false;
@@ -374,6 +395,24 @@ export class Game {
                 c.destroy({
                     children: true,
                 });
+            }
+        }
+    }
+    
+    updateCursor() {
+        const hide = !device.touch
+            && !this.m_spectating
+            && this.controllerAimActive
+            && controllerManager.connected;
+        if (hide != this.cursorHidden) {
+            this.cursorHidden = hide;
+            if (hide) {
+                const elem = document.getElementById("game-area-wrapper");
+                if (elem) {
+                    elem.style.cursor = "none";
+                }
+            } else {
+                crosshair.setGameCrosshair(this.m_config.get("loadout")!.crosshair);
             }
         }
     }
@@ -431,6 +470,22 @@ export class Game {
         );
         this.updateAmbience();
 
+        // Controller rumble when player takes damage
+        const health = this.m_activePlayer.m_localData.m_health;
+        if (
+            this.prevHealthId == this.m_activeId
+            && !this.m_spectating
+            && controllerManager.connected
+        ) {
+            const damageTaken = this.prevHealth - health;
+            if (damageTaken > 0.5) {
+                const mag = math.clamp(damageTaken / 30, 0.25, 1);
+                controllerManager.rumble(mag, mag * 0.5, 160);
+            }
+        }
+        this.prevHealth = health;
+        this.prevHealthId = this.m_activeId;
+
         this.m_camera.m_pos = v2.copy(this.m_activePlayer.m_visualPos);
         this.m_camera.m_applyShake();
         const zoom = this.m_activePlayer.m_getZoom();
@@ -454,7 +509,11 @@ export class Game {
             this.m_camera.m_targetZoom,
         );
         this.m_audioManager.cameraPos = v2.copy(this.m_camera.m_pos);
-        if (this.m_input.keyPressed(Key.Escape)) {
+        if (
+            this.m_input.keyPressed(Key.Escape)
+            || (controllerManager.buttonPressed(GamepadButton.Start)
+                && (!menuNavigator.suppressing || this.m_uiManager.escMenuDisplayed))
+        ) {
             this.m_uiManager.toggleEscMenu();
         }
         // Large Map
@@ -498,6 +557,7 @@ export class Game {
         // Input
         const inputMsg = new net.InputMsg();
         inputMsg.seq = this.seq;
+        this.m_touch.controllerAim = false;
         if (!this.m_spectating) {
             if (device.touch) {
                 const touchPlayerMovement = this.m_touch.getTouchMovement(this.m_camera);
@@ -555,6 +615,102 @@ export class Game {
                         && !this.m_inputBinds.isKeyBound(Key.Down));
                 inputMsg.toMouseDir = v2.copy(toMouseDir);
                 inputMsg.toMouseLen = toMouseLen;
+
+                const ctrl = controllerManager;
+
+                // Ignore player controls when gamepad is controlling a menu
+                if (ctrl.connected && !ctrl.released && !menuNavigator.suppressing) {
+                    const moveX = ctrl.leftStick.x;
+                    const moveY = ctrl.leftStick.y;
+                    const moveLen = Math.sqrt(moveX * moveX + moveY * moveY);
+                    inputMsg.touchMoveActive = true;
+                    inputMsg.touchMoveLen = 0;
+                    if (moveLen > 0.0001) {
+                        inputMsg.touchMoveDir = v2.normalizeSafe(
+                            v2.create(moveX, moveY),
+                            v2.create(1, 0),
+                        );
+                        inputMsg.touchMoveLen = Math.round(
+                            math.clamp(moveLen, 0, 1) * 255,
+                        );
+                    }
+
+                    const maxAimLen = this.m_activePlayer
+                        ? this.m_activePlayer.m_getZoom()
+                        : 28;
+
+                    let aimInput = false;
+                    const stickX = ctrl.rightStick.x;
+                    const stickY = ctrl.rightStick.y;
+                    const stickLen = Math.sqrt(stickX * stickX + stickY * stickY);
+                    if (stickLen > 0.0001) {
+                        const stickRadius = maxAimLen * 0.9;
+                        const target = v2.create(
+                            stickX * stickRadius,
+                            stickY * stickRadius,
+                        );
+                        this.controllerAimOffset = v2.lerp(
+                            math.min(dt * 15, 1),
+                            this.controllerAimOffset,
+                            target,
+                        );
+                        aimInput = true;
+                    }
+                    const gyroDelta = ctrl.takeGyroAimDelta();
+                    if (gyroDelta.x != 0 || gyroDelta.y != 0) {
+                        const gyroWorldPerRad = 110;
+                        this.controllerAimOffset.x += gyroDelta.x * gyroWorldPerRad;
+                        this.controllerAimOffset.y += gyroDelta.y * gyroWorldPerRad;
+                        aimInput = true;
+                    }
+                    const padDelta = ctrl.takeRightPadDelta();
+                    if (padDelta.x != 0 || padDelta.y != 0) {
+                        const padWorldScale = 24;
+                        this.controllerAimOffset.x += padDelta.x * padWorldScale;
+                        this.controllerAimOffset.y += padDelta.y * padWorldScale;
+                        aimInput = true;
+                    }
+
+                    const aimLen = math.clamp(
+                        v2.length(this.controllerAimOffset),
+                        1.5,
+                        maxAimLen,
+                    );
+                    this.controllerAimOffset = v2.mul(
+                        v2.normalizeSafe(this.controllerAimOffset, v2.create(1, 0)),
+                        aimLen,
+                    );
+
+                    const mouseMoved = Math.abs(this.m_input.mousePos.x - this.lastMousePos.x) > 1
+                        || Math.abs(this.m_input.mousePos.y - this.lastMousePos.y) > 1;
+                    if (mouseMoved) {
+                        this.controllerAimActive = false;
+                    } else if (aimInput) {
+                        this.controllerAimActive = true;
+                    }
+
+                    if (this.controllerAimActive && !this.m_emoteBarn.wheelDisplayed) {
+                        inputMsg.toMouseDir = v2.normalizeSafe(
+                            this.controllerAimOffset,
+                            v2.create(1, 0),
+                        );
+                        inputMsg.toMouseLen = aimLen;
+                    }
+                    this.m_touch.controllerAim = this.controllerAimActive;
+                    this.m_touch.controllerAimMode = ctrl.gyroActive ? "crosshair" : "aimline";
+                    this.m_touch.controllerAimOffset = v2.copy(this.controllerAimOffset);
+                    
+                    // For client-side player rotation
+                    ctrl.localAimDir = this.controllerAimActive
+                        ? v2.normalizeSafe(this.controllerAimOffset, v2.create(1, 0))
+                        : null;
+                } else {
+                    this.controllerAimActive = false;
+                    ctrl.localAimDir = null;
+                    ctrl.takeGyroAimDelta();
+                    ctrl.takeRightPadDelta();
+                }
+                this.lastMousePos = v2.copy(this.m_input.mousePos);
             }
             inputMsg.touchMoveDir = v2.normalizeSafe(
                 inputMsg.touchMoveDir,
@@ -615,8 +771,17 @@ export class Game {
                 }
             }
 
-            // Swap weapon slots
-            if (
+            const gamepadSwapBind = this.m_inputBinds.getGamepadBind(
+                Input.SwapWeapSlots,
+            );
+            const gamepadSwapPressed = gamepadSwapBind != null
+                && !menuNavigator.suppressing
+                && controllerManager.buttonPressed(gamepadSwapBind);
+            const throwableEquipped = this.m_activePlayer.m_localData.m_curWeapIdx
+                == GameConfig.WeaponSlot.Throwable;
+            if (gamepadSwapPressed && throwableEquipped) {
+                inputMsg.addInput(Input.EquipThrowable);
+            } else if (
                 this.m_inputBinds.isBindPressed(Input.SwapWeapSlots)
                 || this.m_uiManager.swapWeapSlots
             ) {
@@ -713,6 +878,8 @@ export class Game {
                 this.m_config.set("perkModeRole", roleSelectMessage.role);
             }
         }
+
+        this.updateCursor();
 
         let specAction = this.m_uiManager.specAction;
         if (specAction === SpectateAction.None && this.m_spectating) {

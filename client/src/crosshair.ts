@@ -13,7 +13,7 @@ function getCrosshairDims(crosshairDef: Crosshair) {
         height: Math.round((crosshairBase.height * Number(crosshairDef.size)) / 4) * 4,
     };
 }
-function getBaseURL(crosshairDef: Crosshair) {
+function getDataURL(crosshairDef: Crosshair) {
     const objDef = CrosshairDefs[crosshairDef.type];
     const dims = getCrosshairDims(crosshairDef);
     const color = util.rgbToHex(util.intToRgb(crosshairDef.color));
@@ -22,7 +22,10 @@ function getBaseURL(crosshairDef: Crosshair) {
     svgCode = svgCode.replace(/stroke-width=".5"/g, `stroke-width="${strokeWidth}"`);
     svgCode = svgCode.replace(/width="64"/g, `width="${dims.width}"`);
     svgCode = svgCode.replace(/height="64"/g, `height="${dims.height}"`);
-    return `url('data:image/svg+xml;utf8,${(svgCode = svgCode.replace(/#/g, "%23"))}')`;
+    return `data:image/svg+xml;utf8,${svgCode.replace(/#/g, "%23")}`;
+}
+function getBaseURL(crosshairDef: Crosshair) {
+    return `url('${getDataURL(crosshairDef)}')`;
 }
 function getCursorCSS(crosshairDef: Crosshair) {
     const dims = getCrosshairDims(crosshairDef);
@@ -32,6 +35,9 @@ function getCursorCSS(crosshairDef: Crosshair) {
 export const crosshair = {
     getCursorURL: function(crosshairDef: Crosshair) {
         return getBaseURL(crosshairDef);
+    },
+    getCrosshairDataURL: function(crosshairDef: Crosshair) {
+        return getDataURL(crosshairDef);
     },
     setElemCrosshair: function(elem: JQuery<HTMLElement>, crosshairDef: Crosshair) {
         let cursor = "crosshair";

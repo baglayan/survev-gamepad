@@ -1,4 +1,5 @@
 import { v2 } from "../../shared/utils/v2.ts";
+import { GamepadButtonNames } from "./gamepad/gamepadButtons.ts";
 
 class Touch {
     id = 0;
@@ -395,6 +396,7 @@ export enum InputType {
     Key,
     MouseButton,
     MouseWheel,
+    GamepadButton,
 }
 const KeyNames = [
     "",
@@ -683,6 +685,9 @@ export class InputValue {
         }
         if (this.type == InputType.MouseButton) {
             return MouseButtonNames[this.code] || `Mouse ${this.code}`;
+        }
+        if (this.type == InputType.GamepadButton) {
+            return GamepadButtonNames[this.code] || `Gamepad ${this.code}`;
         }
         return MouseWheelNames[this.code] || `Mouse Wheel ${this.code}`;
     }

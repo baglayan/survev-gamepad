@@ -3,6 +3,7 @@ import { GameConfig } from "../../../shared/gameConfig.ts";
 import type { Bullet } from "../../../shared/net/updateMsg.ts";
 import { v2, type Vec2 } from "../../../shared/utils/v2.ts";
 import type { AudioManager } from "../audioManager.ts";
+import { rumbleShot } from "../gamepad/rumble.ts";
 import type { ParticleBarn } from "./particles.ts";
 import type { PlayerBarn } from "./player.ts";
 
@@ -113,6 +114,11 @@ export class ShotBarn {
                 // New shot
                 if (shot.ticker == 0) {
                     const player = playerBarn.getPlayerById(shot.playerId);
+                    
+                    // Rumble per shot
+                    if (shot.playerId == activePlayerId) {
+                        rumbleShot(weaponDef);
+                    }
 
                     // Play shot sound
                     let shotSound = weaponDef.sound.shoot;

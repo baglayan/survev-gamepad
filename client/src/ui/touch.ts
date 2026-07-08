@@ -12,6 +12,7 @@ import { util } from "../../../shared/utils/util.ts";
 import { v2, type Vec2 } from "../../../shared/utils/v2.ts";
 import type { Camera } from "../camera.ts";
 import type { ConfigManager } from "../config.ts";
+import { crosshair } from "../crosshair.ts";
 import { device } from "../device.ts";
 import type { InputHandler } from "./../input.ts";
 import type { Map } from "../map.ts";
@@ -45,6 +46,10 @@ export class Touch {
     shotDetected = false;
     shotDetectedOld = false;
     touchingAim = false;
+    controllerAim = false;
+    controllerAimMode: "crosshair" | "aimline" = "crosshair";
+    controllerAimOffset = v2.create(4, 0);
+    crosshairSprite: PIXI.Sprite;
     display = true;
     moveStyle = "locked";
     aimStyle = "locked";
@@ -109,6 +114,18 @@ export class Touch {
             };
         };
         this.touchPads = [createPad(), createPad()];
+
+        this.crosshairSprite = new PIXI.Sprite();
+        this.crosshairSprite.anchor.set(0.5, 0.5);
+        this.crosshairSprite.visible = false;
+        try {
+            this.crosshairSprite.texture = PIXI.Texture.from(
+                crosshair.getCrosshairDataURL(config.get("loadout")!.crosshair),
+            );
+        } catch (err) {
+            console.error("Failed to create controller crosshair texture", err);
+        }
+        this.container.addChild(this.crosshairSprite);
         const validateTouchStyle = function(style: "locked" | "anywhere") {
             if (!["locked", "anywhere"].includes(style)) {
                 return "anywhere";
@@ -265,6 +282,14 @@ export class Touch {
             pad.touchSprite.scale.y = this.padScaleBase * this.padScalePos;
             pad.touchSprite.visible = device.touch && this.display;
         }
+
+        const showCrosshair = this.controllerAim && this.controllerAimMode == "crosshair";
+        if (showCrosshair) {
+            const aimWorldPos = v2.add(activePlayer.m_visualPos, this.controllerAimOffset);
+            const screenPos = camera.m_pointToScreen(aimWorldPos);
+            this.crosshairSprite.position.set(screenPos.x, screenPos.y);
+        }
+        this.crosshairSprite.visible = showCrosshair;
 
         this.lineSprites.update(this, activePlayer, map, camera, renderer);
     }
@@ -587,9 +612,16 @@ class LineSprites {
         camera: Camera,
         renderer: Renderer,
     ) {
-        const visible = device.touch && touch.touchingAim && touch.touchAimLine;
+        const visible = ((device.touch && touch.touchingAim)
+            || (touch.controllerAim && touch.controllerAimMode == "aimline"))
+            && touch.touchAimLine;
 
         if (visible) {
+            const playerPos = activePlayer.m_visualPos;
+            const aimDir = touch.controllerAim
+                ? v2.normalizeSafe(touch.controllerAimOffset, v2.create(1, 0))
+                : activePlayer.m_dir;
+
             const curWeap = activePlayer.m_netData.m_activeWeapon;
             const curWeapDef = GameObjectDefs.typeToDef(curWeap) as GunDef | ThrowableDef;
 
@@ -605,8 +637,8 @@ class LineSprites {
             const cameraRad = Math.sqrt(cameraZoom * 1.414 * cameraZoom);
             maxRange = math.min(maxRange, cameraRad);
 
-            const start = v2.copy(activePlayer.m_pos);
-            let end = v2.add(start, v2.mul(activePlayer.m_dir, maxRange));
+            const start = v2.copy(playerPos);
+            let end = v2.add(start, v2.mul(aimDir, maxRange));
 
             // Compute the nearest intersecting obstacle
             const obstacles = map.m_obstaclePool.m_getPool();
@@ -650,10 +682,7 @@ class LineSprites {
             for (let i = 0; i < this.dots.length; i++) {
                 const dot = this.dots[i];
                 const offset = startOffset + i * increment;
-                const pos = v2.add(
-                    activePlayer.m_pos,
-                    v2.mul(activePlayer.m_dir, offset),
-                );
+                const pos = v2.add(playerPos, v2.mul(aimDir, offset));
                 const scale = (1.0 / 32.0) * 0.375;
                 dot.position.set(pos.x, pos.y);
                 dot.scale.set(scale, scale);

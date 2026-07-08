@@ -8,6 +8,7 @@ import type { Vec2 } from "./../../../shared/utils/v2.ts";
 import { v2 } from "../../../shared/utils/v2.ts";
 import type { AudioManager } from "../audioManager.ts";
 import type { Camera } from "../camera.ts";
+import { rumblePlaneSource } from "../gamepad/rumble.ts";
 import type { SoundHandle } from "../lib/createJS.ts";
 import type { Map } from "../map.ts";
 import type { Renderer } from "../renderer.ts";
@@ -256,9 +257,19 @@ export class PlaneBarn {
         map: Map,
         renderer: Renderer,
     ) {
+        let planeRumble = 0;
         for (let i = 0; i < this.planes.length; i++) {
             const p = this.planes[i];
             if (p.active) {
+                {
+                    const distToPlane = v2.length(v2.sub(activePlayer.m_pos, p.pos));
+                    const rumbleRange = p.config.soundRangeMax
+                        * (p.soundRangeMult ?? p.config.soundRangeMult);
+                    const closeness = 1 - math.clamp(distToPlane / rumbleRange, 0, 1);
+                    const swell = math.smoothstep(closeness, 0, 1);
+                    const strength = p.type == GameConfig.Plane.Airstrike ? 0.65 : 0.4;
+                    planeRumble = math.max(planeRumble, swell * strength);
+                }
                 let layer = 0;
                 if (
                     (!!util.sameLayer(layer, activePlayer.layer)
@@ -361,6 +372,7 @@ export class PlaneBarn {
                 p.sprite.visible = true;
             }
         }
+        rumblePlaneSource(planeRumble);
 
         // Update airstrike zones
         for (let i = 0; i < this.airstrikeZones.length; i++) {

@@ -20,6 +20,9 @@ import { math } from "../../../shared/utils/math.ts";
 import { util } from "../../../shared/utils/util.ts";
 import { v2 } from "../../../shared/utils/v2.ts";
 import { device } from "../device.ts";
+import { controllerManager } from "../gamepad/controllerManager.ts";
+import { GamepadButton, GamepadButtonNames } from "../gamepad/gamepadButtons.ts";
+import { getGamepadButtonGlyph } from "../gamepad/gamepadGlyphs.ts";
 import { helpers } from "../helpers.ts";
 import type { InputBinds } from "../inputBinds.ts";
 import type { Map } from "../map.ts";
@@ -597,6 +600,8 @@ export class UiManager2 {
     ) {
         const state = this.newState;
 
+        this.updateGamepadHudHints();
+
         // Device
         state.mobile = device.mobile;
         state.touch = device.touch;
@@ -865,8 +870,17 @@ export class UiManager2 {
             if (device.mobile) {
                 ne.width = 0;
             }
-            const ue = inputBinds.getBind(ne.bind);
-            ne.bindStr = ue ? ue.toString() : "";
+            const gamepadBind = controllerManager.gamepadHintsActive
+                ? inputBinds.getGamepadBind(ne.bind)
+                : null;
+            if (gamepadBind != null) {
+                ne.bindStr = getGamepadButtonGlyph(gamepadBind)
+                    || GamepadButtonNames[gamepadBind]
+                    || "";
+            } else {
+                const ue = inputBinds.getBind(ne.bind);
+                ne.bindStr = ue ? ue.toString() : "";
+            }
         }
         const ge = state.weapons[activePlayer.m_localData.m_curWeapIdx];
         const weaponDef = GameObjectDefs.typeToDef(ge.type) as GunDef | MeleeDef;
@@ -1145,7 +1159,9 @@ export class UiManager2 {
         }
         if (patch.interaction.key) {
             dom.interaction.key.innerHTML = state.touch ? "" : state.interaction.key;
-            dom.interaction.key.className = dom.interaction.key.innerHTML.length > 1
+            dom.interaction.key.className = state.interaction.key.startsWith("<svg")
+                ? "ui-interaction-large ui-interaction-gamepad"
+                : dom.interaction.key.innerHTML.length > 1
                 ? "ui-interaction-small"
                 : "ui-interaction-large";
         }
@@ -1192,7 +1208,9 @@ export class UiManager2 {
                 R.ammo.style.display = L.ammo > 0 ? "block" : "none";
             }
             if (B.bindStr) {
-                R.number.innerHTML = L.bindStr[0] || "";
+                R.number.innerHTML = L.bindStr.startsWith("<svg")
+                    ? L.bindStr
+                    : L.bindStr[0] || "";
             }
         }
         if (patch.ammo.current) {
@@ -1661,31 +1679,101 @@ export class UiManager2 {
         }
     }
 
-    getInteractionKey(type: InteractionType) {
-        let bind = null;
-        switch (type) {
-            case InteractionType.Cancel:
-                bind = this.inputBinds.getBind(Input.Cancel);
-                break;
-            case InteractionType.Loot:
-                bind = this.inputBinds.getBind(Input.Loot)
-                    || this.inputBinds.getBind(Input.Interact);
-                break;
-            case InteractionType.Object:
-                bind = this.inputBinds.getBind(Input.Use)
-                    || this.inputBinds.getBind(Input.Interact);
-                break;
-            case InteractionType.Revive:
-                bind = this.inputBinds.getBind(Input.Revive)
-                    || this.inputBinds.getBind(Input.Interact);
-                break;
-            case InteractionType.None:
-            default:
-                bind = this.inputBinds.getBind(Input.Use);
+    lastGamepadHintSig = "";
+    updateGamepadHudHints() {
+        const useController = controllerManager.gamepadHintsActive && !device.touch;
+        const medBinds: Array<[string, Input]> = [
+            ["bandage", Input.UseBandage],
+            ["healthkit", Input.UseHealthKit],
+            ["soda", Input.UseSoda],
+            ["painkiller", Input.UsePainkiller],
+        ];
+        const prevBind = this.inputBinds.getGamepadBind(Input.EquipPrevWeap);
+        const nextBind = this.inputBinds.getGamepadBind(Input.EquipNextWeap);
+        const sig = `${useController}:${
+            medBinds
+                .map(([, input]) => this.inputBinds.getGamepadBind(input))
+                .join(",")
+        }:${prevBind},${nextBind}`;
+        if (sig == this.lastGamepadHintSig) {
+            return;
+        }
+        this.lastGamepadHintSig = sig;
+
+        const DpadGridArea: Partial<Record<number, string>> = {
+            [GamepadButton.DpadUp]: "1 / 2",
+            [GamepadButton.DpadRight]: "2 / 3",
+            [GamepadButton.DpadDown]: "3 / 2",
+            [GamepadButton.DpadLeft]: "2 / 1",
+        };
+        const placements: Array<{
+            div: HTMLElement;
+            area: string | null;
+        }> = [];
+        let dpadCount = 0;
+        for (let i = 0; i < medBinds.length; i++) {
+            const [lootType, input] = medBinds[i];
+            const div = domElemById(`ui-loot-${lootType}`);
+            const gamepadBind = useController
+                ? this.inputBinds.getGamepadBind(input)
+                : null;
+            const area = gamepadBind != null ? DpadGridArea[gamepadBind] ?? null : null;
+            if (area) {
+                dpadCount++;
+            }
+            placements.push({ div, area });
+        }
+        const dpadLayout = useController && dpadCount == medBinds.length;
+        const medContainer = domElemById("ui-medical-interactive");
+        medContainer.classList.toggle("ui-medical-dpad", dpadLayout);
+        for (let i = 0; i < placements.length; i++) {
+            const p = placements[i];
+            p.div.style.gridArea = dpadLayout && p.area ? p.area : "";
         }
 
-        if (bind) {
-            return bind.toString();
+        let cycleHint = document.getElementById("ui-weapon-cycle-hint");
+        const prevGlyph = prevBind != null ? getGamepadButtonGlyph(prevBind, 18) : null;
+        const nextGlyph = nextBind != null ? getGamepadButtonGlyph(nextBind, 18) : null;
+        if (useController && (prevGlyph || nextGlyph)) {
+            if (!cycleHint) {
+                cycleHint = document.createElement("div");
+                cycleHint.id = "ui-weapon-cycle-hint";
+                domElemById("ui-bottom-right").appendChild(cycleHint);
+            }
+            cycleHint.innerHTML = `${prevGlyph || ""}<span style="opacity:.7;margin:0 3px;">\u21c5</span>${
+                nextGlyph || ""
+            }`;
+        } else if (cycleHint) {
+            cycleHint.remove();
+        }
+    }
+
+    getInteractionKey(type: InteractionType) {
+        const InteractionInputs: Record<InteractionType, Input[]> = {
+            [InteractionType.Cancel]: [Input.Cancel],
+            [InteractionType.Loot]: [Input.Loot, Input.Interact],
+            [InteractionType.Object]: [Input.Use, Input.Interact],
+            [InteractionType.Revive]: [Input.Revive, Input.Interact],
+            [InteractionType.None]: [Input.Use],
+        };
+        const inputs = InteractionInputs[type] || InteractionInputs[InteractionType.None];
+
+        if (controllerManager.gamepadHintsActive) {
+            for (let i = 0; i < inputs.length; i++) {
+                const gamepadBind = this.inputBinds.getGamepadBind(inputs[i]);
+                if (gamepadBind != null) {
+                    return getGamepadButtonGlyph(gamepadBind, 36)
+                        || GamepadButtonNames[gamepadBind]
+                        || "<Unbound>";
+                }
+            }
+        }
+
+        for (let i = 0; i < inputs.length; i++) {
+            const bind = this.inputBinds.getBind(inputs[i]);
+            if (bind) {
+                return bind.toString();
+            }
         }
         return "<Unbound>";
     }

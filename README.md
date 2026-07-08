@@ -14,6 +14,9 @@
 <div align="center">
     Open-source recreation of 2D top-down battle royale <a href="surviv.io">surviv.io</a>.
 </div>
+<div align="center">
+    This fork implements native Steam Controller support and (yet untested) generic gamepad support.
+</div>
 <br />
 
 ## Development

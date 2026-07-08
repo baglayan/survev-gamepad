@@ -1744,6 +1744,7 @@ img {
 
 #ui-ammo-interactive {
   width: 90px;
+  margin-left: auto;
 }
 
 .ui-ammo {
@@ -1800,6 +1801,42 @@ img {
 
 #ui-medical-interactive {
   margin-bottom: 32px;
+}
+
+#ui-medical-interactive.ui-medical-dpad {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  justify-content: end;
+  gap: 4px;
+}
+
+#ui-medical-interactive.ui-medical-dpad > .ui-loot {
+  margin-left: 0;
+  margin-bottom: 0;
+}
+
+.ui-interaction-gamepad {
+  line-height: 42px;
+}
+
+.ui-interaction-gamepad svg {
+  transform: none !important;
+}
+
+.ui-game-menu-desktop.ui-game-menu-controller {
+  height: 545px;
+}
+
+#ui-weapon-cycle-hint {
+  position: absolute;
+  right: 0;
+  bottom: 276px;
+  text-align: right;
+  height: 24px;
+  line-height: 24px;
+  color: #fff;
+  opacity: 0.75;
+  pointer-events: none;
 }
 
 .ui-medical > .ui-loot-image {

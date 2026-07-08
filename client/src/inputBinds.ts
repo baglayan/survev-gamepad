@@ -3,6 +3,10 @@ import $ from "jquery";
 import { type Input, Input as GameInput } from "../../shared/gameConfig.ts";
 import { BitStream } from "../../shared/lib/bitBuffer.ts";
 import type { ConfigManager } from "./config.ts";
+import { controllerManager } from "./gamepad/controllerManager.ts";
+import { GamepadButton, GamepadButtonNames } from "./gamepad/gamepadButtons.ts";
+import { getGamepadButtonGlyph } from "./gamepad/gamepadGlyphs.ts";
+import { menuNavigator } from "./gamepad/menuNavigator.ts";
 import { type InputHandler, InputType, InputValue, Key, MouseButton, MouseWheel } from "./input.ts";
 import { crc16 } from "./lib/crc.ts";
 import type { Localization } from "./ui/localization.ts";
@@ -60,8 +64,33 @@ const BindDefs = {
     [GameInput.TeamPingSingle]: def("Team Ping Menu", null),
 };
 
+// Bump when the default controller layout changes
+const GamepadBindsVersion = 2;
+
+// Default controller layout
+const GamepadBindDefs: Partial<Record<GameInput, GamepadButton>> = {
+    [GameInput.Fire]: GamepadButton.RightTrigger,
+    [GameInput.Interact]: GamepadButton.A,
+    [GameInput.Cancel]: GamepadButton.B,
+    [GameInput.Reload]: GamepadButton.X,
+    [GameInput.SwapWeapSlots]: GamepadButton.Y,
+    [GameInput.EquipPrevWeap]: GamepadButton.LeftBumper,
+    [GameInput.EquipNextWeap]: GamepadButton.RightBumper,
+    [GameInput.UseBandage]: GamepadButton.DpadUp,
+    [GameInput.UseHealthKit]: GamepadButton.DpadRight,
+    [GameInput.UseSoda]: GamepadButton.DpadDown,
+    [GameInput.UsePainkiller]: GamepadButton.DpadLeft,
+    [GameInput.ToggleMap]: GamepadButton.Back,
+    [GameInput.EmoteMenu]: GamepadButton.QuickAccess,
+    [GameInput.EquipPrimary]: GamepadButton.LeftPaddle1,
+    [GameInput.EquipSecondary]: GamepadButton.RightPaddle1,
+    [GameInput.EquipMelee]: GamepadButton.LeftPaddle2,
+    [GameInput.EquipThrowable]: GamepadButton.RightPaddle2,
+};
+
 export class InputBinds {
     binds: Array<InputValue | null> = [];
+    gamepadBinds: Array<number | null> = [];
     boundKeys: Record<number, boolean | null> = {};
     menuHovered = false;
 
@@ -70,6 +99,7 @@ export class InputBinds {
         public config: ConfigManager,
     ) {
         this.loadBinds();
+        this.loadGamepadBinds();
     }
 
     toArray() {
@@ -143,6 +173,7 @@ export class InputBinds {
 
     saveBinds() {
         this.config.set("binds", this.toBase64());
+        this.saveGamepadBinds();
     }
 
     loadBinds() {
@@ -150,6 +181,58 @@ export class InputBinds {
             this.loadDefaultBinds();
             this.saveBinds();
         }
+    }
+
+    saveGamepadBinds() {
+        this.config.set("gamepadBinds", this.gamepadBinds.slice());
+        this.config.set("gamepadBindsVersion", GamepadBindsVersion);
+    }
+
+    loadGamepadBinds() {
+        const stored = this.config.get("gamepadBinds");
+        const version = this.config.get("gamepadBindsVersion") ?? 0;
+        this.clearAllGamepadBinds();
+        if (stored?.length && version >= GamepadBindsVersion) {
+            for (let i = 0; i < Math.min(stored.length, GameInput.Count); i++) {
+                const code = stored[i];
+                this.gamepadBinds[i] =
+                    typeof code == "number" && code > GamepadButton.None && code < GamepadButton.Count
+                        ? code
+                        : null;
+            }
+        } else {
+            this.loadDefaultGamepadBinds();
+            this.saveGamepadBinds();
+        }
+    }
+
+    clearAllGamepadBinds() {
+        for (let i = 0; i < GameInput.Count; i++) {
+            this.gamepadBinds[i] = null;
+        }
+    }
+
+    loadDefaultGamepadBinds() {
+        this.clearAllGamepadBinds();
+        for (const key in GamepadBindDefs) {
+            const bind = Number(key);
+            this.gamepadBinds[bind] = GamepadBindDefs[bind as GameInput]!;
+        }
+    }
+
+    setGamepadBind(bind: number, button: number | null) {
+        if (button != null) {
+            for (let i = 0; i < this.gamepadBinds.length; i++) {
+                if (this.gamepadBinds[i] == button) {
+                    this.gamepadBinds[i] = null;
+                }
+            }
+        }
+        this.gamepadBinds[bind] = button;
+    }
+
+    getGamepadBind(bind: number) {
+        return this.gamepadBinds[bind] ?? null;
     }
 
     upgradeBinds(_version: number) {
@@ -181,6 +264,13 @@ export class InputBinds {
     }
 
     setBind(bind: number, inputValue: InputValue | null) {
+        if (inputValue?.type == InputType.GamepadButton) {
+            this.setGamepadBind(bind, inputValue.code);
+            return;
+        }
+        if (!inputValue) {
+            this.gamepadBinds[bind] = null;
+        }
         if (inputValue) {
             for (let i = 0; i < this.binds.length; i++) {
                 if (this.binds[i]?.equals(inputValue)) {
@@ -213,17 +303,38 @@ export class InputBinds {
 
     isBindPressed(bind: Input) {
         const b = this.binds[bind];
-        return !this.preventMenuBind(b) && b && this.input.isInputValuePressed(b);
+        if (!this.preventMenuBind(b) && b && this.input.isInputValuePressed(b)) {
+            return true;
+        }
+        if (menuNavigator.suppressing) {
+            return false;
+        }
+        const gb = this.gamepadBinds[bind];
+        return gb != null && controllerManager.buttonPressed(gb);
     }
 
     isBindReleased(bind: Input) {
         const b = this.binds[bind];
-        return !this.preventMenuBind(b) && b && this.input.isInputValueReleased(b);
+        if (!this.preventMenuBind(b) && b && this.input.isInputValueReleased(b)) {
+            return true;
+        }
+        if (menuNavigator.suppressing) {
+            return false;
+        }
+        const gb = this.gamepadBinds[bind];
+        return gb != null && controllerManager.buttonReleased(gb);
     }
 
     isBindDown(bind: Input) {
         const b = this.binds[bind];
-        return !this.preventMenuBind(b) && b && this.input.isInputValueDown(b);
+        if (!this.preventMenuBind(b) && b && this.input.isInputValueDown(b)) {
+            return true;
+        }
+        if (menuNavigator.suppressing) {
+            return false;
+        }
+        const gb = this.gamepadBinds[bind];
+        return gb != null && controllerManager.buttonDown(gb);
     }
 
     loadDefaultBinds() {
@@ -234,6 +345,7 @@ export class InputBinds {
             const def = BindDefs[key as unknown as keyof typeof BindDefs];
             this.setBind(parseInt(key), def.defaultValue);
         }
+        this.loadDefaultGamepadBinds();
     }
 }
 
@@ -259,6 +371,34 @@ export class InputBindUi {
         const binds = this.inputBinds.binds;
         const container = $(".js-keybind-list");
         container.empty();
+        const showGamepadColumn = controllerManager.connected || controllerManager.steamGranted;
+        if (showGamepadColumn) {
+            const headerCss = {
+                width: "25%",
+                "line-height": "24px",
+                "font-size": "12px",
+                opacity: 0.6,
+                "text-indent": 0,
+            };
+            container.append(
+                $("<div/>", { class: "ui-keybind-container" })
+                    .append($("<div/>", { css: { width: "50%" } }))
+                    .append(
+                        $("<div/>", {
+                            class: "btn-keybind-display",
+                            text: "Keyboard",
+                            css: headerCss,
+                        }),
+                    )
+                    .append(
+                        $("<div/>", {
+                            class: "btn-keybind-display",
+                            text: "Controller",
+                            css: headerCss,
+                        }),
+                    ),
+            );
+        }
         for (let i = 0; i < defKeys.length; i++) {
             const key = defKeys[i];
             const bindDef = BindDefs[key as unknown as keyof typeof BindDefs];
@@ -273,12 +413,34 @@ export class InputBindUi {
                 class: "btn-game-menu btn-darken btn-keybind-desc",
                 text: this.localization.translate(nameKey) || bindDef.name,
             });
-            const val = $("<div/>", {
-                class: "btn-keybind-display",
-                text: bind
-                    ? this.localization.translate(bind.toString()) || bind.toString()
-                    : "",
-            });
+            const kbName = bind
+                ? this.localization.translate(bind.toString()) || bind.toString()
+                : "";
+            const gamepadBind = this.inputBinds.getGamepadBind(
+                key as unknown as number,
+            );
+            const gamepadCell = () => {
+                const cell = $("<div/>", {
+                    class: "btn-keybind-display",
+                    css: { width: "25%", "text-indent": 0 },
+                });
+                if (gamepadBind != null) {
+                    const buttonName = GamepadButtonNames[gamepadBind]
+                        || `Gamepad ${gamepadBind}`;
+                    const glyph = getGamepadButtonGlyph(gamepadBind);
+                    if (glyph) {
+                        cell.append(
+                            $("<span/>", {
+                                html: glyph,
+                                title: buttonName,
+                            }),
+                        );
+                    } else {
+                        cell.text(buttonName);
+                    }
+                }
+                return cell;
+            };
             btn.on("click", (event) => {
                 const targetElem = $(event.target);
                 targetElem.addClass("btn-keybind-desc-selected");
@@ -322,13 +484,28 @@ export class InputBindUi {
                     return true;
                 });
             });
-            container.append(
-                $("<div/>", {
-                    class: "ui-keybind-container",
-                })
-                    .append(btn)
-                    .append(val),
-            );
+            const row = $("<div/>", {
+                class: "ui-keybind-container",
+            }).append(btn);
+            if (showGamepadColumn) {
+                btn.css("width", "50%");
+                row.append(
+                    $("<div/>", {
+                        class: "btn-keybind-display",
+                        text: kbName,
+                        css: { width: "25%", "text-indent": 0 },
+                    }),
+                );
+                row.append(gamepadCell());
+            } else {
+                row.append(
+                    $("<div/>", {
+                        class: "btn-keybind-display",
+                        text: kbName,
+                    }),
+                );
+            }
+            container.append(row);
         }
         $("#keybind-link").html(this.inputBinds.toBase64());
     }

@@ -7,6 +7,7 @@ import type { AudioManager } from "../audioManager.ts";
 import type { Camera } from "../camera.ts";
 import type { DebugRenderOpts } from "../config.ts";
 import { debugLines } from "../debug/debugLines.ts";
+import { rumbleExplosion } from "../gamepad/rumble.ts";
 import type { SoundHandle } from "../lib/createJS.ts";
 import type { Map } from "../map.ts";
 import type { Particle, ParticleBarn } from "./particles.ts";
@@ -152,6 +153,12 @@ class Explosion {
         const def = ExplosionEffectDefs[expType];
 
         if (this.ticker == 0) {
+            if (def.shakeStr > 0) {
+                rumbleExplosion(
+                    v2.length(v2.sub(camera.m_pos, this.pos)),
+                    def.shakeStr / 0.2,
+                );
+            }
             // Airstrike explosions should not render if they happen indoors
             let renderVisuals = true;
             if (this.type == "explosion_bomb_iron") {

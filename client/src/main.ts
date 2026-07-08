@@ -12,8 +12,10 @@ import { ConfigManager, type ConfigType } from "./config.ts";
 import { device } from "./device.ts";
 import { errorLogManager } from "./errorLogs.ts";
 import { Game } from "./game.ts";
+import { controllerManager } from "./gamepad/controllerManager.ts";
+import { menuNavigator } from "./gamepad/menuNavigator.ts";
 import { helpers } from "./helpers.ts";
-import { InputHandler } from "./input.ts";
+import { InputHandler, InputType } from "./input.ts";
 import { InputBinds, InputBindUi } from "./inputBinds.ts";
 import { PingTest } from "./pingTest.ts";
 import { proxy } from "./proxy.ts";
@@ -328,6 +330,8 @@ export class Application {
                 this.config,
             );
             this.resourceManager.loadMapAssets("main");
+            controllerManager.init(this.config);
+            this.setupControllerUi();
             this.input = new InputHandler(document.getElementById("game-touch-area")!);
             this.inputBinds = new InputBinds(this.input, this.config);
             this.inputBindUi = new InputBindUi(
@@ -394,6 +398,81 @@ export class Application {
 
             SDK.gameLoadComplete();
         }
+    }
+
+    setupControllerUi() {
+        const supported = controllerManager.webHidSupported;
+        $("#btn-connect-controller").css("display", supported ? "inline-block" : "none");
+        $("#controller-unsupported").css("display", supported ? "none" : "block");
+
+        const updateStatus = () => {
+            let status: string;
+            if (controllerManager.released) {
+                status = "Controller released, refocus the game window to reconnect";
+            } else if (controllerManager.steamConnected) {
+                status = "Steam Controller connected";
+            } else if (controllerManager.steamGranted) {
+                status = "Steam Controller paired, turn it on to play";
+            } else if (controllerManager.steamOpenFailed) {
+                status =
+                    "Could not open the controller, close Steam if it's running, then reconnect. On Linux, hidraw permissions are required.";
+            } else if (controllerManager.generic.state.connected) {
+                status = "Gamepad connected";
+            } else {
+                status = "";
+            }
+            $("#controller-status").text(status);
+            $("#controller-settings").css(
+                "display",
+                controllerManager.steamGranted || controllerManager.connected
+                    ? "block"
+                    : "none",
+            );
+            const showReleaseButton = controllerManager.connected
+                && !controllerManager.released;
+            $("#btn-game-release-controller").css(
+                "display",
+                showReleaseButton ? "block" : "none",
+            );
+            $("#ui-game-menu").toggleClass("ui-game-menu-controller", showReleaseButton);
+            this.inputBindUi?.refresh();
+        };
+        controllerManager.onChange = updateStatus;
+        updateStatus();
+
+        $("#btn-connect-controller").on("click", () => {
+            controllerManager.requestSteamController().then(updateStatus);
+            return false;
+        });
+
+        $("#btn-game-release-controller").on("click", () => {
+            controllerManager.release();
+            document.getElementById("btn-game-resume")?.click();
+            return false;
+        });
+
+        const gyroModeSelect = $<HTMLSelectElement>("#gamepad-gyro-mode");
+        gyroModeSelect.val(this.config.get("gamepadGyroMode") || "stickTouch");
+        gyroModeSelect.on("change", (e) => {
+            this.config.set(
+                "gamepadGyroMode",
+                e.target.value as ConfigType["gamepadGyroMode"],
+            );
+        });
+
+        const wireSlider = (
+            selector: string,
+            key: "gamepadGyroSensitivity" | "gamepadTrackpadSensitivity" | "gamepadStickDeadzone",
+        ) => {
+            const slider = $<HTMLInputElement>(selector);
+            slider.val((this.config.get(key) ?? 0) * 100);
+            slider.on("input", (e) => {
+                this.config.set(key, Number($(e.target).val()) / 100);
+            });
+        };
+        wireSlider("#sl-gamepad-gyro-sens", "gamepadGyroSensitivity");
+        wireSlider("#sl-gamepad-trackpad-sens", "gamepadTrackpadSensitivity");
+        wireSlider("#sl-gamepad-deadzone", "gamepadStickDeadzone");
     }
 
     onUnload() {
@@ -887,6 +966,19 @@ export class Application {
 
     update() {
         const dt = math.clamp(this.pixi!.ticker.elapsedMS / 1000, 0.001, 1 / 8);
+        controllerManager.update();
+        const capturingBind = !!this.input?.captureNextInputCb;
+        if (capturingBind) {
+            const pressedButton = controllerManager.anyButtonPressed();
+            if (pressedButton !== null) {
+                this.input!.checkCaptureInput(
+                    new Event("gamepadbutton") as unknown as KeyboardEvent,
+                    InputType.GamepadButton,
+                    pressedButton,
+                );
+            }
+        }
+        menuNavigator.update(capturingBind);
         this.pingTest.update(dt);
         if (!this.checkedPingTest && this.pingTest.isComplete()) {
             if (!this.config.get("regionSelected")) {

@@ -31,6 +31,8 @@ import { debugLines } from "../debug/debugLines.ts";
 import { device } from "../device.ts";
 import { errorLogManager } from "../errorLogs.ts";
 import type { Ctx } from "../game.ts";
+import { controllerManager } from "../gamepad/controllerManager.ts";
+import { materialFromHitSound, rumbleMeleeHit, rumbleMeleeSwing } from "../gamepad/rumble.ts";
 import { helpers } from "../helpers.ts";
 import type { InputHandler } from "../input.ts";
 import type { InputBinds } from "./../inputBinds.ts";
@@ -264,6 +266,7 @@ export class Player implements AbstractObject {
     adrenalineEmitter: Emitter | null = null;
     downed = false;
     wasDowned = false;
+    isLocalPlayer = false;
     bleedTicker = 0;
     submersion = 0;
     gunRecoilL = 0;
@@ -811,6 +814,7 @@ export class Player implements AbstractObject {
     ) {
         const curWeapDef = GameObjectDefs.typeToDef(this.m_netData.m_activeWeapon);
         const isActivePlayer = this.__id == activeId;
+        this.isLocalPlayer = isActivePlayer;
         const activePlayer = playerBarn.getPlayerById(activeId)!;
         this.m_posOld = v2.copy(this.m_pos);
         this.m_dirOld = v2.copy(this.m_dir);
@@ -1899,10 +1903,18 @@ export class Player implements AbstractObject {
             && !isSpectating
             && !displayingStats
         ) {
-            this.bodyContainer.rotation = Math.atan2(
-                mouseY - window.innerHeight / 2,
-                mouseX - window.innerWidth / 2,
-            );
+            const controllerAimDir = controllerManager.localAimDir;
+            if (controllerAimDir) {
+                this.bodyContainer.rotation = -Math.atan2(
+                    controllerAimDir.y,
+                    controllerAimDir.x,
+                );
+            } else {
+                this.bodyContainer.rotation = Math.atan2(
+                    mouseY - window.innerHeight / 2,
+                    mouseX - window.innerWidth / 2,
+                );
+            }
         } else {
             this.bodyContainer.rotation = -Math.atan2(
                 this.m_visualDir.y,
@@ -2302,6 +2314,7 @@ export class Player implements AbstractObject {
             particle: string;
             sound: string | undefined;
             soundFn: "playSound" | "playGroup";
+            rumbleMaterial: string;
         }> = [];
 
         // Obstacles
@@ -2362,6 +2375,7 @@ export class Player implements AbstractObject {
                 particle: obstacleDef.hitParticle,
                 sound: obstacleDef.sound.punch,
                 soundFn: "playGroup",
+                rumbleMaterial: materialFromHitSound(obstacleDef.sound.punch),
             });
         }
 
@@ -2426,6 +2440,7 @@ export class Player implements AbstractObject {
                 particle: "bloodSplat",
                 sound: hitSound,
                 soundFn: "playSound",
+                rumbleMaterial: "flesh",
             });
         }
 
@@ -2439,6 +2454,14 @@ export class Player implements AbstractObject {
         let hitCount = hits.length;
         if (!meleeDef.cleave) {
             hitCount = math.min(hitCount, 1);
+        }
+
+        if (this.isLocalPlayer) {
+            if (hitCount > 0) {
+                rumbleMeleeHit(hits[0].rumbleMaterial);
+            } else {
+                rumbleMeleeSwing();
+            }
         }
 
         for (let i = 0; i < hitCount; i++) {

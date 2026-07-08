@@ -13,7 +13,8 @@
     "build": "cd server && pnpm build && cd ../client && pnpm build",
     "stressTest": "cd server && pnpm stressTest",
     "lint": "oxlint --fix; dprint fmt",
-    "lint:ci": "oxlint; dprint check"
+    "lint:ci": "oxlint; dprint check",
+    "generate-gamepad-glyphs": "node client/src/gamepad/glyphs/generate.mjs"
   },
   "engines": {
     "node": ">=22.18.0"

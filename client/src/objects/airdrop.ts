@@ -8,6 +8,7 @@ import { v2, type Vec2 } from "../../../shared/utils/v2.ts";
 import type { AudioManager } from "../audioManager.ts";
 import type { Camera } from "../camera.ts";
 import type { Ctx } from "../game.ts";
+import { rumbleAirdropLand } from "../gamepad/rumble.ts";
 import type { SoundHandle } from "../lib/createJS.ts";
 import type { Map } from "../map.ts";
 import type { Renderer } from "../renderer.ts";
@@ -151,6 +152,9 @@ export class AirdropBarn {
                     });
                     audioManager.stopSound(airdrop.fallInstance!);
                     airdrop.fallInstance = null;
+                    rumbleAirdropLand(
+                        v2.length(v2.sub(activePlayer.m_pos, airdrop.pos)),
+                    );
                 }
             }
 

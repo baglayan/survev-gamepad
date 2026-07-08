@@ -115,6 +115,13 @@ const defaultConfig = {
     loadout: loadout.defaultLoadout(),
     sessionCookie: "" as string | null,
     binds: "",
+    gamepadBinds: [] as Array<number | null>, // empty array = use defaults
+    gamepadBindsVersion: 0,
+    gamepadStickDeadzone: 0.15,
+    gamepadGyroMode: "stickTouch" as "stickTouch" | "padTouch" | "always" | "off",
+    gamepadGyroSensitivity: 1,
+    gamepadGyroInvert: false,
+    gamepadTrackpadSensitivity: 1,
     cachedBgImg: "img/main_splash.png",
     version: 1,
     /* STRIP_FROM_PROD_CLIENT:START */

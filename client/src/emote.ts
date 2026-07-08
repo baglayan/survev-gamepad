@@ -17,6 +17,8 @@ import { v2, type Vec2 } from "../../shared/utils/v2.ts";
 import type { AudioManager } from "./audioManager.ts";
 import type { Camera } from "./camera.ts";
 import { device } from "./device.ts";
+import { controllerManager } from "./gamepad/controllerManager.ts";
+import { menuNavigator } from "./gamepad/menuNavigator.ts";
 import { helpers } from "./helpers.ts";
 import type { InputHandler } from "./input.ts";
 import type { InputBinds } from "./inputBinds.ts";
@@ -140,6 +142,10 @@ export class EmoteBarn {
 
     emoteMouseTriggered = false;
     emoteScreenPos = v2.create(0, 0);
+
+    // Steam Controller left trackpad emote wheel
+    controllerEmoteActive = false;
+    leftPadTouchedOld = false;
 
     triggerPing!: () => void;
     triggerEmote!: () => void;
@@ -871,6 +877,35 @@ export class EmoteBarn {
             }
         }
 
+        // Steam Controller left trackpad controls emote wheel
+        const leftPad = controllerManager.leftTouchpad;
+        if (leftPad && !spectating && !this.disable && !menuNavigator.suppressing) {
+            if (
+                leftPad.touched
+                && !this.leftPadTouchedOld
+                && !this.pingMouseTriggered
+                && !this.emoteMouseTriggered
+            ) {
+                this.emoteScreenPos = v2.create(
+                    camera.m_screenWidth / 2,
+                    camera.m_screenHeight / 2,
+                );
+                this.emoteMouseTriggered = true;
+                this.controllerEmoteActive = true;
+            }
+            if (this.controllerEmoteActive && !leftPad.touched && this.leftPadTouchedOld) {
+                this.triggerEmote();
+                this.controllerEmoteActive = false;
+            }
+            this.leftPadTouchedOld = leftPad.touched;
+        } else {
+            if (this.controllerEmoteActive) {
+                this.inputReset();
+                this.controllerEmoteActive = false;
+            }
+            this.leftPadTouchedOld = !!leftPad?.touched;
+        }
+
         // Update local emote wheels
         this.activePlayer = player;
         if ((localId != player.__id || !!player.m_netData.m_dead) && !this.disable) {
@@ -944,6 +979,15 @@ export class EmoteBarn {
 
                     if (device.touch) {
                         mousePos = this.emoteTouchedPos!;
+                    }
+
+                    if (this.controllerEmoteActive && controllerManager.leftTouchpad?.touched) {
+                        const pad = controllerManager.leftTouchpad;
+                        const padWheelRadius = 80;
+                        mousePos = v2.create(
+                            this.emoteScreenPos.x + pad.x * padWheelRadius,
+                            this.emoteScreenPos.y - pad.y * padWheelRadius,
+                        );
                     }
 
                     if (mousePos) {

@@ -91,6 +91,7 @@
                 <input type="range" min="0" max="100" value="100" class="slider sl-music-volume">
               </div>
               <a id="btn-game-quit" class="btn-quit btn-game-menu btn-darken" data-l10n="game-quit-game">Quit Game</a>
+              <a id="btn-game-release-controller" class="btn-game-menu btn-darken" style="display:none;">Release Controller</a>
             </div>
             <div id="ui-game-tab-keybinds" class="ui-game-tab">
               <div id="ui-keybind-list" class="js-keybind-list"></div>
@@ -1336,6 +1337,39 @@
             <div class="modal-settings-item slider-container main-volume-slider">
               <p class="modal-slider-text" data-l10n="index-music-volume">Music Volume</p>
               <input type="range" min="0" max="100" value="50" class="slider sl-music-volume" id="">
+            </div>
+            <div id="modal-settings-controller">
+              <div class="modal-settings-item">
+                <a id="btn-connect-controller" class="menu-option btn-green btn-darken" style="display:none;">Connect Steam Controller</a>
+                <p id="controller-status" style="margin:6px 0 0 0;"></p>
+                <p id="controller-unsupported" style="display:none;margin:6px 0 0 0;">Steam Controller support requires a Chromium-based browser (Chrome, Edge, Opera). Other controllers still work through the standard gamepad support.</p>
+              </div>
+              <div id="controller-settings" style="display:none;">
+                <div class="modal-settings-item">
+                  <p class="modal-slider-text" style="width:auto;">Gyro aim</p>
+                  <select id="gamepad-gyro-mode">
+                    <option value="stickTouch">On right stick touch</option>
+                    <option value="padTouch">On right trackpad touch</option>
+                    <option value="always">Always on</option>
+                    <option value="off">Off</option>
+                  </select>
+                </div>
+                <div class="modal-settings-item">
+                  <input id="gamepadGyroInvert" type="checkbox"><p class="modal-settings-checkbox-text">Invert gyro</p>
+                </div>
+                <div class="modal-settings-item slider-container main-volume-slider">
+                  <p class="modal-slider-text">Gyro Sensitivity</p>
+                  <input type="range" min="10" max="300" value="100" class="slider" id="sl-gamepad-gyro-sens">
+                </div>
+                <div class="modal-settings-item slider-container main-volume-slider">
+                  <p class="modal-slider-text">Trackpad Sensitivity</p>
+                  <input type="range" min="10" max="300" value="100" class="slider" id="sl-gamepad-trackpad-sens">
+                </div>
+                <div class="modal-settings-item slider-container main-volume-slider">
+                  <p class="modal-slider-text">Stick Deadzone</p>
+                  <input type="range" min="0" max="40" value="15" class="slider" id="sl-gamepad-deadzone">
+                </div>
+              </div>
             </div>
             <div id="settings-links">
               <!--
