@@ -9,11 +9,11 @@ export interface GameData {
     aliveCount: number;
     startedTime: number;
     stopped: boolean;
+    timeRunning: number;
 }
 
 export enum ProcessMsgType {
     Create,
-    Created,
     KeepAlive,
     UpdateData,
     AddJoinToken,
@@ -27,10 +27,6 @@ export interface CreateGameMsg {
     type: ProcessMsgType.Create;
     config: ServerGameConfig;
     id: string;
-}
-
-export interface GameCreatedMsg {
-    type: ProcessMsgType.Created;
 }
 
 export interface KeepAliveMsg {
@@ -83,7 +79,6 @@ export interface SocketCloseMsg {
 
 export type ProcessMsg =
     | CreateGameMsg
-    | GameCreatedMsg
     | KeepAliveMsg
     | UpdateDataMsg
     | AddJoinTokenMsg

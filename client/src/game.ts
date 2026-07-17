@@ -1449,6 +1449,7 @@ export class Game {
                 );
                 this.m_resourceManager.loadMapAssets(this.m_map.mapName);
                 this.m_map.renderMap(this.m_pixi.renderer, this.m_canvasMode);
+                this.m_renderer.resize(this.m_map, this.m_camera);
                 this.m_bulletBarn.onMapLoad(this.m_map);
                 this.m_particleBarn.onMapLoad(this.m_map);
                 this.m_uiManager.onMapLoad(this.m_map, this.m_camera);
@@ -1516,7 +1517,7 @@ export class Game {
                 // Display the kill / downed notification for the active player
                 if (msg.killCreditId == this.m_activeId) {
                     const completeKill = msg.killerId == this.m_activeId;
-                    const suicide = msg.killerId == msg.targetId || msg.killCreditId == msg.targetId;
+                    const suicide = msg.killCreditId == msg.targetId;
                     const killText = this.m_ui2Manager.getKillText(
                         killerName,
                         targetName,

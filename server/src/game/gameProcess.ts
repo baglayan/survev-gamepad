@@ -26,6 +26,7 @@ class ServerGame extends Game {
             aliveCount: this.aliveCount,
             startedTime: this.startedTime,
             stopped: this.stopped,
+            timeRunning: this.timeRunning,
         });
         if (this.stopped) {
             game = undefined;
@@ -205,10 +206,6 @@ process.on("message", (msg: ProcessMsg) => {
 
     if (msg.type === ProcessMsgType.Create && !game) {
         game = new ServerGame(msg.id, msg.config);
-
-        sendMsg({
-            type: ProcessMsgType.Created,
-        });
     }
 
     if (!game) return;

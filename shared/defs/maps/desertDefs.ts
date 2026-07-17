@@ -15,9 +15,13 @@ const mapDef: PartialMapDef = {
     },
     assets: {
         audio: [
+            { name: "reserve_music_01", channel: "ambient" },
+            { name: "reserve_music_02", channel: "ambient" },
             { name: "piano_02", channel: "sfx" },
             { name: "log_03", channel: "sfx" },
             { name: "log_04", channel: "sfx" },
+            { name: "coconut_01", channel: "sfx" },
+            { name: "potato_pickup_01", channel: "ui" },
             { name: "piano_music_01", channel: "ambient" },
         ],
         atlases: ["gradient", "loadout", "shared", "desert"],
@@ -29,6 +33,9 @@ const mapDef: PartialMapDef = {
             waterRipple: 0xd1e685,
             beach: 0xc9843a,
             riverbank: 0xb25e24,
+            lakeWater: 0x42b0ba,
+            lakeWaterRipple: 0xb3f0ff,
+            lakeRiverbank: 0x916e27,
             grass: 0xdfa757,
             underground: 0x3d0d03,
             playerSubmerge: 0x4e9b8f,
@@ -53,8 +60,9 @@ const mapDef: PartialMapDef = {
                 },
             ],
             crates: [
-                { name: "airdrop_crate_01", weight: 10 },
+                { name: "airdrop_crate_01", weight: 12 },
                 { name: "airdrop_crate_02de", weight: 1 },
+                { name: "airdrop_crate_05", weight: 1 },
             ],
         },
     },
@@ -141,11 +149,7 @@ const mapDef: PartialMapDef = {
             { name: "", count: 1, weight: 20 },
             { name: "outfitMeteor", count: 1, weight: 5 },
             { name: "outfitHeaven", count: 1, weight: 1 },
-            {
-                name: "outfitGhillie",
-                count: 1,
-                weight: 0.5,
-            },
+            { name: "outfitGhillie", count: 1, weight: 0.5 },
         ],
         tier_airdrop_melee: [
             { name: "", count: 1, weight: 19 },
@@ -200,6 +204,8 @@ const mapDef: PartialMapDef = {
             { name: "fabricate", count: 1, weight: 1 },
             { name: "flak_jacket", count: 1, weight: 1 },
             { name: "bonus_45", count: 1, weight: 1 },
+            { name: "amped_explosives", count: 1, weight: 1 },
+            { name: "explosive", count: 1, weight: 1 },
         ],
     },
     mapGen: {
@@ -208,11 +214,24 @@ const mapDef: PartialMapDef = {
             shoreInset: 8,
             grassInset: 12,
             rivers: {
+                lakes: [
+                    {
+                        odds: 1,
+                        innerRad: 10,
+                        outerRad: 20,
+                        centerObj: "oasis_01",
+                        riverMaskRad: 48,
+                        spawnBound: {
+                            pos: v2.create(0.5, 0.5),
+                            rad: 300,
+                        },
+                    },
+                ],
                 weights: [
                     { weight: 0.1, widths: [4] },
                     { weight: 0.15, widths: [8] },
                     { weight: 0.25, widths: [8, 4] },
-                    { weight: 0.21, widths: [8] },
+                    { weight: 0.21, widths: [8, 6] },
                     { weight: 0.09, widths: [8, 8] },
                     { weight: 0.2, widths: [8, 8, 4] },
                     {
@@ -262,7 +281,7 @@ const mapDef: PartialMapDef = {
                 crate_03: 8,
                 bush_01: 90,
                 tree_06: 220,
-                tree_05c: 144,
+                tree_05c: 96,
                 tree_09: 40,
                 hedgehog_01: 12,
                 container_01: 5,
@@ -277,8 +296,9 @@ const mapDef: PartialMapDef = {
         ],
         fixedSpawns: [
             {
-                warehouse_01: 4,
-                house_red_01: 3,
+                warehouse_01: 2,
+                warehouse_03: 1,
+                house_red_01: 2,
                 house_red_02: 1,
                 barn_01: 1,
                 barn_02d: 1,

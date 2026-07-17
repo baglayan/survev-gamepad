@@ -4,12 +4,16 @@ import type { BuildingDef, ObstacleDef } from "../../shared/defs/mapObjectsTypin
 import { MapObjectDefs } from "../../shared/defs/register.ts";
 import { GameConfig } from "../../shared/gameConfig.ts";
 import type { GroundPatch, MapMsg } from "../../shared/net/mapMsg.ts";
-import { type Circle, coldet, type Collider } from "../../shared/utils/coldet.ts";
+import { coldet, type Collider } from "../../shared/utils/coldet.ts";
 import { collider } from "../../shared/utils/collider.ts";
 import { mapHelpers } from "../../shared/utils/mapHelpers.ts";
 import { math } from "../../shared/utils/math.ts";
 import type { River } from "../../shared/utils/river.ts";
-import { generateJaggedAabbPoints, generateTerrain } from "../../shared/utils/terrainGen.ts";
+import {
+    generateJaggedAabbPoints,
+    generateJaggedCirclePoints,
+    generateTerrain,
+} from "../../shared/utils/terrainGen.ts";
 import { util } from "../../shared/utils/util.ts";
 import { v2, type Vec2 } from "../../shared/utils/v2.ts";
 import type { Ambiance } from "./ambiance.ts";
@@ -45,20 +49,36 @@ function tracePath(canvas: PIXI.Graphics, path: Vec2[]) {
     canvas.closePath();
 }
 function traceGroundPatch(canvas: PIXI.Graphics, patch: GroundPatch, seed: number) {
-    const width = patch.max.x - patch.min.x;
-    const height = patch.max.y - patch.min.y;
-
     const offset = math.max(patch.offsetDist, 0.001);
     const roughness = patch.roughness;
-
-    const divisionsX = Math.round((width * roughness) / offset);
-    const divisionsY = Math.round((height * roughness) / offset);
-
     const seededRand = util.seededRand(seed);
-    tracePath(
-        canvas,
-        generateJaggedAabbPoints(patch, divisionsX, divisionsY, offset, seededRand),
-    );
+
+    if (patch.bound.type === collider.Type.Circle) {
+        const divisions = Math.round(
+            (2 * Math.PI * patch.bound.rad * roughness) / offset,
+        );
+
+        tracePath(
+            canvas,
+            generateJaggedCirclePoints(
+                patch.bound.pos,
+                patch.bound.rad,
+                divisions,
+                offset,
+                seededRand,
+            ),
+        );
+    } else {
+        const width = patch.bound.max.x - patch.bound.min.x;
+        const height = patch.bound.max.y - patch.bound.min.y;
+        const divisionsX = Math.round((width * roughness) / offset);
+        const divisionsY = Math.round((height * roughness) / offset);
+
+        tracePath(
+            canvas,
+            generateJaggedAabbPoints(patch.bound, divisionsX, divisionsY, offset, seededRand),
+        );
+    }
 }
 
 function renderRiverDebug(river: River, playerPos: Vec2) {
@@ -378,17 +398,29 @@ export class Map {
         }
 
         // River shore
-        groundGfx.beginFill(mapColors.riverbank);
 
         // groundGfx.lineStyle(2, 0xff0000);
 
         for (let i = 0; i < terrain.rivers.length; i++) {
-            tracePath(groundGfx, terrain.rivers[i].shorePoly);
+            if (!terrain.rivers[i].looped) {
+                groundGfx.beginFill(mapColors.riverbank);
+                tracePath(groundGfx, terrain.rivers[i].shorePoly);
+            } else {
+                groundGfx.beginFill(mapColors.lakeRiverbank ?? mapColors.riverbank);
+                tracePath(groundGfx, terrain.rivers[i].shorePoly);
+            }
         }
         groundGfx.endFill();
-        groundGfx.beginFill(mapColors.water);
+
+        // River water
         for (let b = 0; b < terrain.rivers.length; b++) {
-            tracePath(groundGfx, terrain.rivers[b].waterPoly);
+            if (!terrain.rivers[b].looped) {
+                groundGfx.beginFill(mapColors.water);
+                tracePath(groundGfx, terrain.rivers[b].waterPoly);
+            } else {
+                groundGfx.beginFill(mapColors.lakeWater ?? mapColors.water);
+                tracePath(groundGfx, terrain.rivers[b].waterPoly);
+            }
         }
         groundGfx.endFill();
 
@@ -464,7 +496,7 @@ export class Map {
         let shapes: Array<{
             scale?: number;
             color: number;
-            collider: Circle;
+            collider: Collider;
         }> = [];
         if ((def as BuildingDef).map?.shapes !== undefined) {
             // @ts-expect-error stfu
@@ -480,7 +512,7 @@ export class Map {
                     : mapHelpers.getBoundingCollider(obj.type))
             ) {
                 shapes.push({
-                    collider: collider.copy(col) as Circle,
+                    collider: collider.copy(col),
                     scale: def.map!.scale || 1,
                     color: def.map!.color!,
                 });
@@ -660,9 +692,16 @@ export class Map {
         const groundSurface = (type: string, data: Record<string, any> = {}) => {
             if (type == "water") {
                 const mapColors = this.getMapDef().biome.colors;
-                data.waterColor = data.waterColor !== undefined ? data.waterColor : mapColors.water;
+                const isLake = data.river?.looped ?? false;
+                data.waterColor = data.waterColor !== undefined
+                    ? data.waterColor
+                    : isLake
+                    ? (mapColors.lakeWater ?? mapColors.water)
+                    : mapColors.water;
                 data.rippleColor = data.rippleColor !== undefined
                     ? data.rippleColor
+                    : isLake
+                    ? (mapColors.lakeWaterRipple ?? mapColors.waterRipple)
                     : mapColors.waterRipple;
             }
             return {
